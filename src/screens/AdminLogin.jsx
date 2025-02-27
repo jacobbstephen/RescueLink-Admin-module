@@ -9,22 +9,21 @@ const AdminLogin = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Username:", username);
-    console.log("Password:", password);
+    
     try {
       const response = await axios.post("http://localhost:3000/admin/login", {
         username,
         password,
       });
       if (response.status === 200 && response.data.token) {
-        console.log("Login Successful");
+        
         localStorage.setItem('Token', response.data.token)
         navigate("/dashboard");
       }else{
         alert("Invalid Credentials");
       }
     } catch (err) {
-      console.log("Login Not Possible");
+      
       alert("Invalid Credentials");
     }
 
