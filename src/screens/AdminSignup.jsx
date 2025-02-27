@@ -10,9 +10,7 @@ const AdminSignup = () => {
 
   const handleSubmit =  async(e) => {
     e.preventDefault();
-    console.log("Name:", name);
-    console.log("Username:", username);
-    console.log("Password:", password);
+
 
     try {
         const response = await axios.post("http://localhost:3000/admin/signup", {
@@ -21,7 +19,7 @@ const AdminSignup = () => {
           name,
         });
         if (response.status === 200) {
-          console.log("SignUp Successful");
+          
           navigate("/");
         }else{
           alert("Try again");
