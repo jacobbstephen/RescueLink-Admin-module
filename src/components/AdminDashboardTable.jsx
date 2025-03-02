@@ -1,272 +1,238 @@
 import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  Alert,
-} from "react-native";
-import * as Location from "expo-location";
-import { MaterialIcons } from "@expo/vector-icons";
 import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import messaging from "@react-native-firebase/messaging";
-import * as ImagePicker from "react-native-image-picker";
 
-const IncidentReportingScreen = ({ navigation }) => {
-  const [location, setLocation] = useState(null);
-  const [title, setTitle] = useState("");
-  const [incidentType, setIncidentType] = useState("");
-  const [description, setDescription] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
+const AdminDashboardTable = ({ incidents, setIncidents }) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [placeFilter, setPlaceFilter] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(null);
 
+  const itemsPerPage = 3;
+  const places = [
+    "All",
+    ...new Set(incidents.map((incident) => incident.state)),
+  ];
+
+  // ✅ Filter incidents based on search & place
+  const filteredIncidents = incidents.filter(
+    (incident) =>
+      (placeFilter === "All" || incident.state === placeFilter) &&
+      incident.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // ✅ Ensure totalPages is at least 1
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredIncidents.length / itemsPerPage)
+  );
+
+  // ✅ Reset to Page 1 when filter changes
   useEffect(() => {
-    messaging()
-      .requestPermission()
-      .then((authStatus) => {
-        const enabled =
-          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-        if (enabled) {
-          console.log("Authorization status:", authStatus);
-        } else {
-          console.log("Permission not granted for push notifications");
-        }
-      });
+    setCurrentPage(1);
+  }, [searchQuery, placeFilter]);
 
-    const unsubscribe = messaging().onMessage(async (remoteMessage) => {
-      Alert.alert("Push Notification", remoteMessage.notification.body, [{ text: "OK" }]);
-    });
+  // ✅ Get paginated results
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedIncidents = filteredIncidents.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
 
-    return unsubscribe;
-  }, []);
-
-  // 📌 ✅ Update File Picker
-  const handleFileUpload = () => {
-    const options = {
-      mediaType: "photo",
-      quality: 1,
-      includeBase64: false,
-    };
-
-    ImagePicker.launchImageLibrary(options, (response) => {
-      if (response.didCancel) {
-        console.log("User cancelled file picker");
-      } else if (response.errorMessage) {
-        console.log("File picker error: ", response.errorMessage);
-      } else {
-        const pickedFile = response.assets[0];
-        setSelectedFile(pickedFile);
-      }
-    });
-  };
-
-  // 📌 ✅ Update `handleSubmit`
-  const handleSubmit = async () => {
+  const handleVerify = async (incidentId) => {
+    console.log("In verify");
+    setLoading(incidentId);
     try {
-      // Retrieve Auth Token
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        console.log("No token found, please login again.");
-        return;
-      }
-
-      // Get Coordinates
-      const latitude = 8.4697;
-      const longitude = 76.9818;
-
-      // Create FormData
-      const formData = new FormData();
-      formData.append("title", title);
-      formData.append("type", incidentType);
-      formData.append("description", description);
-      formData.append("latitude", latitude);
-      formData.append("longitude", longitude);
-
-      // Append File if Selected
-      if (selectedFile) {
-        formData.append("file", {
-          uri: selectedFile.uri,
-          type: selectedFile.type || "image/jpeg", // Default to JPEG
-          name: selectedFile.fileName || `image_${Date.now()}.jpg`,
-        });
-      }
-
-      // API Call
-      const response = await axios.post(
-        "http://10.0.2.2:3000/incident/report",
-        formData,
+      const token = localStorage.getItem("Token");
+      const response = await axios.put(
+        `http://localhost:3000/admin/verify/${incidentId}`,
+        {}, // Put method usually requires a request body (empty in this case)
         {
           headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${token}`, // Include token in headers
           },
         }
       );
-
-      if (response.status === 200) {
-        console.log("Incident reported successfully:", response.data);
-        Alert.alert("Success", "Incident reported successfully.");
-      } else {
-        console.log("Failed to report incident:", response.data);
-      }
-    } catch (err) {
-      console.log("Error reporting incident:", err);
+      setIncidents((prevIncidents) =>
+        prevIncidents.map((incident) =>
+          incident._id === incidentId
+            ? { ...incident, verifiedStatus: "Verified" }
+            : incident
+        )
+      );
+    } catch (error) {
+      console.error("Error verifying incident:", error);
     }
+    setLoading(null);
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header Section */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="black" />
-        </TouchableOpacity>
-        <Text style={styles.headerText}>Report Incident</Text>
-      </View>
+    <div className="relative overflow-x-auto shadow-lg rounded-lg bg-white/50 backdrop-blur-md p-6">
+      {/* Filters and Search Input */}
+      <div className="flex flex-col sm:flex-row justify-between items-center pb-6">
+        <select
+          className="border border-gray-300 rounded-lg px-4 py-2 shadow-md focus:ring-2 focus:ring-[#1eaad1] transition-all"
+          value={placeFilter}
+          onChange={(e) => setPlaceFilter(e.target.value)}
+        >
+          {places.map((place) => (
+            <option key={place} value={place}>
+              {place}
+            </option>
+          ))}
+        </select>
 
-      {/* Image Container */}
-      <View style={styles.imageContainer}>
-        <Image source={require("../../assets/reporting.png")} style={styles.image} />
-      </View>
+        <div className="relative">
+          <input
+            type="text"
+            className="block w-80 p-2 pl-10 text-sm border border-gray-300 rounded-lg bg-gray-50 shadow-md focus:ring-[#1eaad1] focus:border-[#1eaad1]"
+            placeholder="Search incidents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
 
-      {/* Input Fields */}
-      <View style={styles.formContainer}>
-        <Text style={styles.label}>Incident Title</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Give a title"
-          value={title}
-          onChangeText={setTitle}
-        />
+      <table className="w-full text-sm text-left text-gray-700 rounded-lg overflow-hidden">
+        <thead className="text-xs uppercase text-white bg-gradient-to-r from-[#1eaad1] to-[#158aa8]">
+          <tr>
+            <th className="px-6 py-3">Incident Title</th>
+            <th className="px-6 py-3">Type</th>
+            <th className="px-6 py-3">Description</th>
+            <th className="px-6 py-3">Date</th>
+            <th className="px-6 py-3">State</th>
+            <th className="px-6 py-3">District</th>
+            <th className="px-6 py-3">Locality</th>
+            <th className="px-6 py-3">Reporter Name</th>
+            <th className="px-6 py-3">Phone Number</th>
+            <th className="px-6 py-3">Location</th>
+            <th className="px-6 py-3">Status</th>
+            <th className="px-6 py-3">Action</th>
+            <th className="px-6 py-3">Image</th> {/* New Image Column */}
+          </tr>
+        </thead>
+        <tbody>
+          {paginatedIncidents.length > 0 ? (
+            paginatedIncidents.map((incident) => (
+              <tr
+                key={incident._id}
+                className="border-b transition-all hover:bg-[#f3f8fa] bg-gray-50"
+              >
+                <td className="px-6 py-4 font-medium">{incident.title}</td>
+                <td className="px-6 py-4">{incident.type}</td>
+                <td className="px-6 py-4 text-gray-600">
+                  {incident.description}
+                </td>
+                <td className="px-6 py-4">
+                  {incident.date
+                    ? new Date(incident.date).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: true,
+                      })
+                    : "No Date Available"}
+                </td>
+                <td className="px-6 py-4">{incident.state}</td>
+                <td className="px-6 py-4">{incident.district}</td>
+                <td className="px-6 py-4">{incident.locality}</td>
+                <td className="px-6 py-4">{incident.reporterName}</td>
+                <td className="px-6 py-4">{incident.phoneNumber}</td>
 
-        <Text style={styles.label}>Type of Incident</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="(e.g. Fire, Accident)"
-          value={incidentType}
-          onChangeText={setIncidentType}
-        />
+                <td className="px-6 py-4">
+                  {incident.location?.coordinates?.length === 2 ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${incident.location.coordinates[1]},${incident.location.coordinates[0]}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition-all"
+                    >
+                      View
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">No Location</span>
+                  )}
+                </td>
 
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={styles.descriptionInput}
-          placeholder="Brief description about the incident"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-        />
+                <td className="px-6 py-4">
+                  <span
+                    className={`px-3 py-1 rounded text-xs font-semibold shadow-md ${
+                      incident.verifiedStatus === "Verified"
+                        ? "bg-green-200 text-green-700"
+                        : "bg-red-200 text-red-700"
+                    }`}
+                  >
+                    {incident.verifiedStatus}
+                  </span>
+                </td>
 
-        {/* File Upload Section */}
-        <TouchableOpacity style={styles.uploadButton} onPress={handleFileUpload}>
-          <Text style={styles.uploadButtonText}>
-            {selectedFile ? "Change File" : "Upload File"}
-          </Text>
-        </TouchableOpacity>
+                <td className="px-6 py-4">
+                  {incident.verifiedStatus === "Unverified" ? (
+                    <button
+                      className="px-3 py-1.5 bg-gradient-to-r from-green-400 to-green-600 text-white font-semibold rounded-lg shadow-md hover:from-green-500 hover:to-green-700 transition-all"
+                      onClick={() => handleVerify(incident._id)}
+                      disabled={loading === incident._id}
+                    >
+                      {loading === incident._id ? "Verifying..." : "Verify"}
+                    </button>
+                  ) : (
+                    <span className="text-gray-500">Verified</span>
+                  )}
+                </td>
 
-      
+                {/* ✅ Image Column */}
+                <td className="px-6 py-4">
+                  {incident.fileUrl ? (
+                    <a
+                      href={incident.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 bg-gradient-to-r from-indigo-400 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-indigo-500 hover:to-indigo-700 transition-all"
+                    >
+                      View 
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">No Preview</span>
+                  )}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="13" className="text-center py-6 text-gray-600">
+                No incidents found.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
-        {/* Submit Button */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Submit</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      {/* Pagination Controls */}
+      <div className="flex justify-between mt-4">
+        <button
+          className="px-6 py-2 bg-[#1eaad1] text-white rounded-lg shadow-md hover:bg-[#159ab8] transition-all"
+          onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+          disabled={currentPage === 1}
+        >
+          Prev
+        </button>
+        <span className="text-gray-700 font-semibold">
+          Page {currentPage} of {totalPages}
+        </span>
+        <button
+          className="px-6 py-2 bg-[#1eaad1] text-white rounded-lg shadow-md hover:bg-[#159ab8] transition-all"
+          onClick={() =>
+            setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+          }
+          disabled={currentPage === totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
   );
 };
 
-// 🔹 Styles (No Changes)
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "white",
-    paddingTop: 50,
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    elevation: 3,
-  },
-  backButton: {
-    marginRight: 10,
-  },
-  headerText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "black",
-  },
-  imageContainer: {
-    alignItems: "center",
-    marginVertical: 10,
-  },
-  image: {
-    width: "100%",
-    height: 250,
-    resizeMode: "contain",
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  label: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-    marginLeft: 10,
-    color: "#333",
-  },
-  formContainer: {
-    flex: 1,
-    padding: 20,
-  },
-  input: {
-    backgroundColor: "white",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  descriptionInput: {
-    backgroundColor: "white",
-    padding: 15,
-    borderRadius: 10,
-    height: 120,
-    textAlignVertical: "top",
-    fontSize: 16,
-  },
-  submitButton: {
-    backgroundColor: "#1eaad1",
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  submitButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  uploadButton: {
-    backgroundColor: "#007bff", // Blue color for the button
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  uploadButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-
-  fileName: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#555",
-  },
-});
-
-export default IncidentReportingScreen;
+export default AdminDashboardTable;
